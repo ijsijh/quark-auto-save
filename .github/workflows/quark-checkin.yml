@@ -1,0 +1,49 @@
+name: 夸克网盘签到
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '5 2 * * *'   # 北京时间 10:05
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装签到依赖
+        run: pip install requests treelib natsort
+
+      - name: 由 Secrets 生成 quark_config.json（仅签到，不转存）
+        env:
+          QUARK_COOKIE: ${{ secrets.QUARK_COOKIE }}
+          PUSH_PLUS_TOKEN: ${{ secrets.PUSH_PLUS_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json, os
+          raw = os.getenv("QUARK_COOKIE", "").strip()
+          if raw.startswith("["):
+              cookies = json.loads(raw)
+          elif "\n" in raw:
+              cookies = [c.strip() for c in raw.splitlines() if c.strip()]
+          else:
+              cookies = [raw] if raw else []
+          push = {"QUARK_SIGN_NOTIFY": True}
+          ppt = os.getenv("PUSH_PLUS_TOKEN", "").strip()
+          if ppt:
+              push["PUSH_PLUS_TOKEN"] = ppt
+          cfg = {"cookie": cookies, "push_config": push, "tasklist": []}
+          with open("quark_config.json", "w", encoding="utf-8") as f:
+              json.dump(cfg, f, ensure_ascii=False, indent=2)
+          print("账号数:", len(cookies))
+          PY
+
+      - name: 执行夸克签到
+        run: python quark_auto_save.py
